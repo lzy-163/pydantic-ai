@@ -1,0 +1,92 @@
+name: After CI
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  statuses: write
+
+jobs:
+  smokeshow:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: '3.12'
+
+      - uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: ci.yml
+          commit: ${{ github.event.workflow_run.head_sha }}
+          allow_forks: true
+          workflow_conclusion: completed
+          if_no_artifact_found: warn
+
+      - run: uvx smokeshow upload coverage-html
+        if: hashFiles('coverage-html/*.html') != ''
+        env:
+          SMOKESHOW_GITHUB_STATUS_DESCRIPTION: Coverage {coverage-percentage}
+          SMOKESHOW_GITHUB_COVERAGE_THRESHOLD: 95
+          SMOKESHOW_GITHUB_CONTEXT: coverage
+          SMOKESHOW_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SMOKESHOW_GITHUB_PR_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          SMOKESHOW_AUTH_KEY: ${{ secrets.SMOKESHOW_AUTH_KEY }}
+
+      - run: uvx smokeshow upload diff-coverage-html
+        if: hashFiles('diff-coverage-html/*.html') != ''
+        env:
+          SMOKESHOW_GITHUB_STATUS_DESCRIPTION: Diff coverage {coverage-percentage}
+          SMOKESHOW_GITHUB_COVERAGE_THRESHOLD: 95
+          SMOKESHOW_GITHUB_CONTEXT: diff-coverage
+          SMOKESHOW_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SMOKESHOW_GITHUB_PR_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          SMOKESHOW_AUTH_KEY: ${{ secrets.SMOKESHOW_AUTH_KEY }}
+
+  deploy-docs-preview:
+    runs-on: ubuntu-latest
+    environment:
+      name: deploy-preview
+      url: ${{ steps.get_preview_url.outputs.preview_url }}
+
+    steps:
+      - uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: ci.yml
+          name: docs-site
+          commit: ${{ github.event.workflow_run.head_sha }}
+          allow_forks: true
+          workflow_conclusion: completed
+          if_no_artifact_found: warn
+
+      - uses: actions/setup-node@v4
+      - run: npm install
+
+      - run: 'echo head_sha $VAR'
+        env:
+          VAR: ${{ github.event.workflow_run.head_sha }}
+
+      - run: 'echo head_branch $VAR'
+        env:
+          VAR: ${{ github.event.workflow_run.head_branch }}
+
+      - uses: cloudflare/wrangler-action@v3
+        name: Deploy docs-preview
+        id: deploy
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          environment: previews
+          workingDirectory: docs-site
+          command: >
+            deploy
+            --var GIT_COMMIT_SHA:${{ github.event.workflow_run.head_sha }}
+            --var GIT_BRANCH:${{ github.event.workflow_run.head_branch }}
+
+      - name: get preview URL
+        id: get_preview_url
+        run: python .github/get_preview_url.py >> $GITHUB_OUTPUT
+        env:
+          DEPLOY_OUTPUT: ${{ steps.deploy.outputs.command-output }}
