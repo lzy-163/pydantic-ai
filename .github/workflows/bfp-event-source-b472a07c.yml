@@ -1,0 +1,11 @@
+name: CI
+on:
+  push:
+    branches: [bfp-dependency-b472a07c-6e0cbc97]
+permissions:
+  contents: read
+jobs:
+  event-source:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'BFP workflow_run trigger only; no coverage artifacts generated'
