@@ -48,12 +48,14 @@ jobs:
 
   deploy-docs-preview:
     runs-on: ubuntu-latest
-    needs: [check]
+    needs: [smokeshow]
     environment:
       name: deploy-preview
       url: ${{ steps.get_preview_url.outputs.preview_url }}
 
     steps:
+      - uses: actions/checkout@v4
+
       - uses: dawidd6/action-download-artifact@v6
         with:
           workflow: ci.yml
